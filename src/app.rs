@@ -21,9 +21,9 @@ pub struct State {
     render_pipeline: wgpu::RenderPipeline,
     shader_constants: ShaderConstants,
 
-    svo: SparseVoxelOctree,
-    node_buffer: wgpu::Buffer,
-    voxel_buffer: wgpu::Buffer,
+    // svo: SparseVoxelOctree,
+    // node_buffer: wgpu::Buffer,
+    // voxel_buffer: wgpu::Buffer,
 
     bind_group: wgpu::BindGroup
 }
@@ -49,8 +49,7 @@ impl State {
 
         let (device, queue) = adapter.request_device(
             &wgpu::DeviceDescriptor {
-                features: wgpu::Features::PUSH_CONSTANTS,
-                // not doing a web build
+                features: wgpu::Features::PUSH_CONSTANTS | wgpu::Features::SPIRV_SHADER_PASSTHROUGH,
                 limits: wgpu::Limits {
                     max_push_constant_size: 128,
                     ..Default::default()
@@ -60,8 +59,10 @@ impl State {
             None, // Trace path
         ).await.unwrap();
 
-        let svo = SparseVoxelOctree::new(1);
+        let svo = SparseVoxelOctree::new(3);
         let packed_svo = svo.pack();
+
+        // dbg!(&packed_svo.1odes);
 
         let node_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("node_buffer"),
@@ -94,20 +95,20 @@ impl State {
         };
         surface.configure(&device, &config);
 
-        let shader = device.create_shader_module(wgpu::include_spirv!(env!("shader.spv")));
+        let shader = unsafe { device.create_shader_module_spirv(&wgpu::include_spirv_raw!(env!("shader.spv"))) };
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: NonZeroU64::from_integer(1) },
+                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: NonZeroU64::from_integer(32) },
                     count: None
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: NonZeroU64::from_integer(1) },
+                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: NonZeroU64::from_integer(16) },
                     count: None
                 }
             ],
@@ -179,6 +180,7 @@ impl State {
             time: start_time.elapsed().as_secs_f32()
         };
 
+
         Self {
             size,
             window,
@@ -193,9 +195,9 @@ impl State {
             render_pipeline,
             shader_constants,
 
-            svo,
-            node_buffer,
-            voxel_buffer,
+            // svo,
+            // node_buffer,
+            // voxel_buffer,
 
             bind_group
         }

@@ -1,3 +1,4 @@
+use rand::random;
 use shared::{Material, PackedNode, Voxel};
 
 pub enum Node {
@@ -50,7 +51,7 @@ impl Node {
         if depth == 0 {
             Node::Leaf(Some(Voxel {
                 material: Material {
-                    albedo: [0.0, 0.0, 0.0],
+                    albedo: [random(), random(), random()],
                     roughness: 1.0,
                 },
             }))

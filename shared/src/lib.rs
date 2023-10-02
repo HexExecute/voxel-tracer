@@ -3,7 +3,7 @@
 use bytemuck::{Pod, Zeroable};
 
 #[repr(transparent)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq, Eq, Debug)]
 pub struct PackedNode(pub u32);
 
 #[repr(C)]
@@ -15,14 +15,24 @@ pub struct ShaderConstants {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
 pub struct Material {
     pub albedo: [f32; 3],
     pub roughness: f32,
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
 pub struct Voxel {
     pub material: Material,
+}
+
+impl PackedNode {
+    pub fn is_leaf(&self) -> bool {
+        self.0 >= 1 << 31
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0 == u32::MAX
+    }
 }
