@@ -1,11 +1,11 @@
 use std::{time::Instant, num::NonZeroU64};
 
 use bytemuck::Contiguous;
-use shared::ShaderConstants;
+use shared::{ShaderConstants, TREE_DEPTH, Voxel};
 use wgpu::util::DeviceExt;
 use winit::{window::Window, event::WindowEvent};
 
-use crate::svo::SparseVoxelOctree;
+use crate::svo::{SparseVoxelOctree, Node};
 
 pub struct State {
     pub size: winit::dpi::PhysicalSize<u32>,
@@ -59,7 +59,7 @@ impl State {
             None, // Trace path
         ).await.unwrap();
 
-        let svo = SparseVoxelOctree::new(3);
+        let svo = SparseVoxelOctree::new(TREE_DEPTH);
         let packed_svo = svo.pack();
 
         // dbg!(&packed_svo.1odes);
@@ -82,7 +82,7 @@ impl State {
         // sRGB surfaces, you'll need to account for that when drawing to the frame.
         let surface_format = surface_caps.formats.iter()
             .copied()
-            .find(|f| f.is_srgb())            
+            .find(|f| !f.is_srgb())            
             .unwrap_or(surface_caps.formats[0]);
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -177,7 +177,8 @@ impl State {
         let shader_constants = ShaderConstants {
             width: size.width,
             height: size.height,
-            time: start_time.elapsed().as_secs_f32()
+            time: start_time.elapsed().as_secs_f32(),
+            root_node: packed_svo.root
         };
 
 

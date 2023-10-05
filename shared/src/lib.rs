@@ -12,6 +12,7 @@ pub struct ShaderConstants {
     pub width: u32,
     pub height: u32,
     pub time: f32,
+    pub root_node: PackedNode,
 }
 
 #[repr(C)]
@@ -29,10 +30,12 @@ pub struct Voxel {
 
 impl PackedNode {
     pub fn is_leaf(&self) -> bool {
-        self.0 >= 1 << 31
+        self.0 >= (1 << 31)
     }
 
     pub fn is_empty(&self) -> bool {
         self.0 == u32::MAX
     }
 }
+
+pub const TREE_DEPTH: u32 = 3;

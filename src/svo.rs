@@ -1,5 +1,5 @@
 use rand::random;
-use shared::{Material, PackedNode, Voxel};
+use shared::{Material, PackedNode, Voxel, TREE_DEPTH};
 
 pub enum Node {
     Branch { children: Box<[Self; 8]> },
@@ -7,6 +7,7 @@ pub enum Node {
 }
 
 pub struct PackedSparseVoxelOctree {
+    pub root: PackedNode,
     pub nodes: Vec<[PackedNode; 8]>,
     pub voxels: Vec<Voxel>,
 }
@@ -21,14 +22,18 @@ impl SparseVoxelOctree {
         let mut nodes: Vec<[PackedNode; 8]> = vec![];
         let mut voxels: Vec<Voxel> = vec![];
 
-        self.root.pack_traverse(&mut nodes, &mut voxels);
+        let root = self.root.pack_traverse(&mut nodes, &mut voxels);
 
-        PackedSparseVoxelOctree { voxels, nodes }
+        PackedSparseVoxelOctree {
+            voxels,
+            nodes,
+            root,
+        }
     }
 
     pub fn new(depth: u32) -> Self {
         Self {
-            root: Node::new(depth),
+            root: Node::new(depth, 0, 0, 0),
             max_depth: depth,
         }
     }
@@ -47,17 +52,31 @@ impl SparseVoxelOctree {
 }
 
 impl Node {
-    pub fn new(depth: u32) -> Self {
+    pub fn new(depth: u32, x: usize, y: usize, z: usize) -> Self {
         if depth == 0 {
             Node::Leaf(Some(Voxel {
                 material: Material {
-                    albedo: [random(), random(), random()],
+                    albedo: [
+                        (0x40 + (x as u8) * 0x11) as f32 / 255.0,
+                        (0x40 + (y as u8) * 0x11) as f32 / 255.0,
+                        (0x40 + (z as u8) * 0x11) as f32 / 255.0,
+                    ],
+                    // albedo: [random(), random(), random()],
                     roughness: 1.0,
                 },
             }))
         } else {
+            let child_depth = depth - 1;
+            let child_size = 1 << child_depth;
             Node::Branch {
-                children: Box::new(std::array::from_fn(|_| Node::new(depth - 1))),
+                children: Box::new(std::array::from_fn(|i| {
+                    Node::new(
+                        child_depth,
+                        x + ((i >> 0) & 1) * child_size,
+                        y + ((i >> 1) & 1) * child_size,
+                        z + ((i >> 2) & 1) * child_size,
+                    )
+                })),
             }
         }
     }
@@ -83,7 +102,7 @@ impl Node {
             Node::Leaf(Some(voxel)) => {
                 let voxel_idx = voxels.len();
                 voxels.push(*voxel);
-                PackedNode(voxel_idx as u32 | 1 << 31)
+                PackedNode(voxel_idx as u32 | (1 << 31))
             }
             Node::Leaf(None) => PackedNode(u32::MAX),
         }

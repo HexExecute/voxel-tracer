@@ -7,8 +7,6 @@ const CAMERA_ORIGIN: Vec3 = vec3(0.0, 0.0, 0.0);
 const FOCAL_LENGTH: f32 = 1.0;
 const VIEWPORT_HEIGHT: f32 = 2.0;
 
-const TREE_DEPTH: u32 = 3;
-
 const EMPTY_MATERIAL: Material = Material {
     albedo: [0.0, 0.0, 0.0],
     roughness: 0.0,
@@ -17,7 +15,7 @@ const EMPTY_MATERIAL: Material = Material {
 #[allow(unused)]
 use spirv_std::num_traits::Float;
 
-use shared::{Material, PackedNode, ShaderConstants, Voxel};
+use shared::{Material, PackedNode, ShaderConstants, Voxel, TREE_DEPTH};
 use spirv_std::{
     glam::{ivec3, uvec3, vec2, vec3, vec4, BVec3, IVec3, UVec3, Vec3, Vec3Swizzles, Vec4},
     spirv,
@@ -58,7 +56,14 @@ const EMPTY_GET_RESULT: GetResult = GetResult {
     material: EMPTY_MATERIAL,
 };
 
-fn get(x: i32, y: i32, z: i32, nodes: &[[PackedNode; 8]], voxels: &[Voxel]) -> GetResult {
+fn get(
+    x: i32,
+    y: i32,
+    z: i32,
+    nodes: &[[PackedNode; 8]],
+    voxels: &[Voxel],
+    root: PackedNode,
+) -> GetResult {
     if x < 0 || x >= 2_i32.pow(TREE_DEPTH) {
         return EMPTY_GET_RESULT;
     }
@@ -73,7 +78,7 @@ fn get(x: i32, y: i32, z: i32, nodes: &[[PackedNode; 8]], voxels: &[Voxel]) -> G
     let mut y = y as u32;
     let mut z = z as u32;
 
-    let mut node = PackedNode(0);
+    let mut node = root;
     let mut s = 2_u32.pow(TREE_DEPTH - 1);
 
     loop {
@@ -83,7 +88,7 @@ fn get(x: i32, y: i32, z: i32, nodes: &[[PackedNode; 8]], voxels: &[Voxel]) -> G
         if node.is_leaf() {
             return GetResult {
                 exists: true,
-                material: voxels[(node.0 - 1 << 31) as usize].material,
+                material: voxels[(node.0 & !(1 << 31)) as usize].material,
             };
         }
 
@@ -130,7 +135,12 @@ fn get(x: i32, y: i32, z: i32, nodes: &[[PackedNode; 8]], voxels: &[Voxel]) -> G
 }
 
 impl Ray {
-    fn traverse(&mut self, nodes: &[[PackedNode; 8]], voxels: &[Voxel]) -> HitResult {
+    fn traverse(
+        &mut self,
+        nodes: &[[PackedNode; 8]],
+        voxels: &[Voxel],
+        root: PackedNode,
+    ) -> HitResult {
         let delta_dist = 1.0 / self.direction.abs();
         let ray_step = self.direction.signum().as_ivec3();
         let mut map_pos = self.origin.floor().as_ivec3();
@@ -154,7 +164,14 @@ impl Ray {
             // if sphere(map_pos.as_vec3()) < 0.01 {
             // let uposition = uvec3(map_pos.x as u32, map_pos.y as u32, map_pos.z as u32);
             // let uposition = map_pos.as_uvec3();
-            let get_result = get(map_pos.x, map_pos.y, map_pos.z + 20, nodes, voxels);
+            let get_result = get(
+                map_pos.x - 3,
+                map_pos.y + 3,
+                map_pos.z + 15,
+                nodes,
+                voxels,
+                root,
+            );
             if get_result.exists {
                 let d = (fmask * (side_dist - delta_dist)).length() / 100.0;
 
@@ -189,8 +206,8 @@ impl Ray {
         }
     }
 
-    fn color(&mut self, nodes: &[[PackedNode; 8]], voxels: &[Voxel]) -> Vec3 {
-        let hit_result = self.traverse(nodes, voxels);
+    fn color(&mut self, nodes: &[[PackedNode; 8]], voxels: &[Voxel], root: PackedNode) -> Vec3 {
+        let hit_result = self.traverse(nodes, voxels, root);
 
         if hit_result.exists {
             vec3(
@@ -251,7 +268,7 @@ pub fn main_fs(
             t: 0.0,
         };
 
-        color += ray.color(nodes, voxels);
+        color += ray.color(nodes, voxels, constants.root_node);
     }
 
     color /= SAMPLES as f32;
