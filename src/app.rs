@@ -61,35 +61,35 @@ impl State {
 
         let mut svo = SparseVoxelOctree::new(TREE_DEPTH);
 
-        svo.insert(0, 0, 0, svo::Node::Leaf(Some(Voxel { material: Material {
-            albedo: [0.5, 0.5, 0.5],
-            roughness: 1.0
-        }})), 1);
-        svo.insert(15, 0, 0, svo::Node::Leaf(Some(Voxel { material: Material {
-            albedo: [0.5, 0.5, 0.5],
-            roughness: 1.0
-        }})), 1);
-        svo.insert(0, 15, 0, svo::Node::Leaf(Some(Voxel { material: Material {
-            albedo: [0.5, 0.5, 0.5],
-            roughness: 1.0
-        }})), 1);
+        // svo.insert(0, 0, 0, svo::Node::Leaf(Some(Voxel { material: Material {
+        //     albedo: [0.5, 0.5, 0.5],
+        //     roughness: 1.0
+        // }})), 1);
+        // svo.insert(15, 0, 0, svo::Node::Leaf(Some(Voxel { material: Material {
+        //     albedo: [0.5, 0.5, 0.5],
+        //     roughness: 1.0
+        // }})), 1);
+        // svo.insert(0, 15, 0, svo::Node::Leaf(Some(Voxel { material: Material {
+        //     albedo: [0.5, 0.5, 0.5],
+        //     roughness: 1.0
+        // }})), 1);
         svo.insert(0, 0, 15, svo::Node::Leaf(None), 1);
-        svo.insert(15, 15, 0, svo::Node::Leaf(Some(Voxel { material: Material {
-            albedo: [0.5, 0.5, 0.5],
-            roughness: 1.0
-        }})), 1);
-        svo.insert(15, 0, 15, svo::Node::Leaf(Some(Voxel { material: Material {
-            albedo: [0.5, 0.5, 0.5],
-            roughness: 1.0
-        }})), 1);
-        svo.insert(15, 15, 15, svo::Node::Leaf(Some(Voxel { material: Material {
-            albedo: [0.5, 0.5, 0.5],
-            roughness: 1.0
-        }})), 1);
-        svo.insert(0, 15, 15, svo::Node::Leaf(Some(Voxel { material: Material {
-            albedo: [0.5, 0.5, 0.5],
-            roughness: 1.0
-        }})), 1);
+        // svo.insert(15, 15, 0, svo::Node::Leaf(Some(Voxel { material: Material {
+        //     albedo: [0.5, 0.5, 0.5],
+        //     roughness: 1.0
+        // }})), 1);
+        // svo.insert(15, 0, 15, svo::Node::Leaf(Some(Voxel { material: Material {
+        //     albedo: [0.5, 0.5, 0.5],
+        //     roughness: 1.0
+        // }})), 1);
+        // svo.insert(15, 15, 15, svo::Node::Leaf(Some(Voxel { material: Material {
+        //     albedo: [0.5, 0.5, 0.5],
+        //     roughness: 1.0
+        // }})), 1);
+        // svo.insert(0, 15, 15, svo::Node::Leaf(Some(Voxel { material: Material {
+        //     albedo: [0.5, 0.5, 0.5],
+        //     roughness: 1.0
+        // }})), 1);
 
         let packed_svo = svo.pack();
 

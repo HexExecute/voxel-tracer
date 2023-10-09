@@ -44,12 +44,14 @@ fn less_than_equal(vec1: Vec3, vec2: Vec3) -> BVec3 {
 
 struct GetResult {
     is_branch: bool,
+    is_higher: bool,
     exists: bool,
     material: Material,
 }
 
 const EMPTY_GET_RESULT: GetResult = GetResult {
     is_branch: false,
+    is_higher: false,
     exists: false,
     material: EMPTY_MATERIAL,
 };
@@ -58,10 +60,10 @@ fn get(
     x: i32,
     y: i32,
     z: i32,
+    depth: usize,
     nodes: &[[PackedNode; 8]],
     voxels: &[Voxel],
     root: PackedNode,
-    depth: usize,
 ) -> GetResult {
     if x < 0 || x >= (1 << TREE_DEPTH) {
         return EMPTY_GET_RESULT;
@@ -80,13 +82,14 @@ fn get(
     let mut node = root;
     let mut s = 2_u32.pow(TREE_DEPTH - 1);
 
-    for _ in 0..(depth + 1) {
+    for i in 0..(depth + 1) {
         if node.is_empty() {
             return EMPTY_GET_RESULT;
         }
         if node.is_leaf() {
             return GetResult {
                 is_branch: false,
+                is_higher: i < depth,
                 exists: true,
                 material: voxels[(node.0 & !(1 << 31)) as usize].material,
             };
@@ -106,6 +109,7 @@ fn get(
 
     GetResult {
         is_branch: true,
+        is_higher: false,
         exists: true,
         material: EMPTY_MATERIAL,
     }
@@ -118,93 +122,79 @@ impl Ray {
         voxels: &[Voxel],
         root: PackedNode,
     ) -> HitResult {
-        let mut depth: usize = 1;
-        let mut section_size = (1 << (TREE_DEPTH - depth as u32)) as f32;
+        // origin_location + origin_offset = origin
+        let mut origin_location = self.origin.trunc().as_ivec3();
+        // let origin_offset = self.origin - origin_location.as_vec3();
 
-        let delta_dist = 1.0 / self.direction.abs();
-        let ray_step = self.direction.signum().as_ivec3();
-        // let mut map_pos = self.origin.floor().as_ivec3();
-
-        let mut grid_intersect = self.origin * self.direction;
-        let mut intersect = grid_intersect * section_size;
-
-        let mut off = Vec3::ZERO;
-        let mut block_pos = (intersect + off).floor().as_ivec3();
-
-        let mut section_pos = block_pos % section_size as i32;
-
-        let mut side_dist = (self.direction.signum() * (block_pos.as_vec3() - intersect)
-            + (self.direction * 0.5)
+        let delta_distance = (self.direction.length() / self.direction).abs();
+        let mut side_distance = (self.direction.signum()
+            * (origin_location.as_vec3() - self.origin)
+            + (self.direction.signum() * 0.5)
             + 0.5)
-            * delta_dist;
+            * delta_distance;
 
-        // representing u32::MAX packed nodes as None in this case
-        // let mut stack: [PackedNode; TREE_DEPTH as usize] =
-        //     [PackedNode(u32::MAX); TREE_DEPTH as usize];
-        // let mut stack_len: usize = 0;
+        // imgaginary stack of parent nodes though no real data is necessary
+        // we start at maximum depth and then work our way up if we need to
+        let mut stack_length = 4;
 
         for _ in 0..TRAVERSAL_STEPS {
             let get_result = get(
-                section_pos.x - 3,
-                section_pos.y + 3,
-                section_pos.z + 25,
+                origin_location.x - 3,
+                origin_location.y + 5,
+                origin_location.z + 25,
+                stack_length,
                 nodes,
                 voxels,
                 root,
-                depth,
             );
 
-            let mask = less_than_equal(side_dist.xyz(), side_dist.yzx().min(side_dist.zxy()));
-            let fmask = vec3(
-                mask.x as i32 as f32,
-                mask.y as i32 as f32,
-                mask.z as i32 as f32,
-            );
-
-            if get_result.exists {
-                if get_result.is_branch {
-                    depth += 1;
-                    section_size = (1 << (TREE_DEPTH - depth as u32)) as f32;
-
-                    // ray_step = section_size as i32 * self.origin.floor().as_ivec3();
-
-                    let d = fmask.length() * (side_dist - delta_dist);
-
-                    grid_intersect = self.origin + d * self.direction;
-                    intersect = grid_intersect * section_size;
-
-                    off = self.direction.signum() * fmask * 0.5;
-                    block_pos = (intersect + off).floor().as_ivec3();
-                    // let section_pos = block_pos % section_size as i32;
-
-                    side_dist = (self.direction.signum() * (block_pos.as_vec3() - intersect)
-                        + (self.direction * 0.5)
-                        + 0.5)
-                        * delta_dist;
-
-                    continue;
-                } else {
-                    return HitResult {
-                        exists: true,
-                        position: Vec3::ZERO,
-                        normal: Vec3::ZERO,
-                        material: get_result.material,
-                    };
-                }
+            if get_result.is_branch {
+                stack_length += 1;
+                continue;
             }
 
-            side_dist += fmask * delta_dist;
-            section_pos += fmask.as_ivec3() * ray_step;
+            if get_result.is_higher {
+                stack_length -= 1;
+                continue;
+            }
+
+            if get_result.exists {
+                return HitResult {
+                    exists: true,
+                    material: get_result.material,
+                    position: Vec3::ZERO, // not setup yet
+                    normal: Vec3::ZERO,   // not setup yet
+                };
+            }
+
+            // move ray
+            let ray_step_size: i32 = 1 << (TREE_DEPTH - stack_length as u32);
+            let ray_step = self.direction.signum().as_ivec3() * ray_step_size;
+
+            let mask = less_than_equal(
+                side_distance.xyz(),
+                side_distance.yzx().min(side_distance.zxy()),
+            );
+
+            let fmask = vec3(
+                if mask.x { 1.0 } else { 0.0 },
+                if mask.y { 1.0 } else { 0.0 },
+                if mask.z { 1.0 } else { 0.0 },
+            );
+
+            side_distance += fmask * delta_distance;
+            origin_location += fmask.as_ivec3() * ray_step;
         }
 
+        // didn't hit anything
         HitResult {
             exists: false,
-            position: Vec3::ZERO,
-            normal: Vec3::ZERO,
             material: Material {
                 albedo: [0.0, 0.0, 0.0],
-                roughness: 0.0,
+                roughness: 1.0,
             },
+            position: Vec3::ZERO,
+            normal: Vec3::ZERO,
         }
     }
 
