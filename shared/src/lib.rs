@@ -38,4 +38,4 @@ impl PackedNode {
     }
 }
 
-pub const TREE_DEPTH: u32 = 3;
+pub const TREE_DEPTH: u32 = 4;

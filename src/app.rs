@@ -1,11 +1,11 @@
 use std::{time::Instant, num::NonZeroU64};
 
 use bytemuck::Contiguous;
-use shared::{ShaderConstants, TREE_DEPTH, Voxel};
+use shared::{ShaderConstants, TREE_DEPTH, Voxel, Material};
 use wgpu::util::DeviceExt;
 use winit::{window::Window, event::WindowEvent};
 
-use crate::svo::{SparseVoxelOctree, Node};
+use crate::svo::{SparseVoxelOctree, self};
 
 pub struct State {
     pub size: winit::dpi::PhysicalSize<u32>,
@@ -59,10 +59,39 @@ impl State {
             None, // Trace path
         ).await.unwrap();
 
-        let svo = SparseVoxelOctree::new(TREE_DEPTH);
-        let packed_svo = svo.pack();
+        let mut svo = SparseVoxelOctree::new(TREE_DEPTH);
 
-        // dbg!(&packed_svo.1odes);
+        svo.insert(0, 0, 0, svo::Node::Leaf(Some(Voxel { material: Material {
+            albedo: [0.5, 0.5, 0.5],
+            roughness: 1.0
+        }})), 1);
+        svo.insert(15, 0, 0, svo::Node::Leaf(Some(Voxel { material: Material {
+            albedo: [0.5, 0.5, 0.5],
+            roughness: 1.0
+        }})), 1);
+        svo.insert(0, 15, 0, svo::Node::Leaf(Some(Voxel { material: Material {
+            albedo: [0.5, 0.5, 0.5],
+            roughness: 1.0
+        }})), 1);
+        svo.insert(0, 0, 15, svo::Node::Leaf(None), 1);
+        svo.insert(15, 15, 0, svo::Node::Leaf(Some(Voxel { material: Material {
+            albedo: [0.5, 0.5, 0.5],
+            roughness: 1.0
+        }})), 1);
+        svo.insert(15, 0, 15, svo::Node::Leaf(Some(Voxel { material: Material {
+            albedo: [0.5, 0.5, 0.5],
+            roughness: 1.0
+        }})), 1);
+        svo.insert(15, 15, 15, svo::Node::Leaf(Some(Voxel { material: Material {
+            albedo: [0.5, 0.5, 0.5],
+            roughness: 1.0
+        }})), 1);
+        svo.insert(0, 15, 15, svo::Node::Leaf(Some(Voxel { material: Material {
+            albedo: [0.5, 0.5, 0.5],
+            roughness: 1.0
+        }})), 1);
+
+        let packed_svo = svo.pack();
 
         let node_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("node_buffer"),
@@ -77,9 +106,7 @@ impl State {
         });
 
         let surface_caps = surface.get_capabilities(&adapter);
-        // Shader code in this tutorial assumes an sRGB surface texture. Using a different
-        // one will result all the colors coming out darker. If you want to support non
-        // sRGB surfaces, you'll need to account for that when drawing to the frame.
+
         let surface_format = surface_caps.formats.iter()
             .copied()
             .find(|f| !f.is_srgb())            

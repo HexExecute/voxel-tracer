@@ -2,6 +2,7 @@
 
 const SAMPLES: usize = 1;
 const BOUNCES: usize = 16;
+const TRAVERSAL_STEPS: usize = 40;
 
 const CAMERA_ORIGIN: Vec3 = vec3(0.0, 0.0, 0.0);
 const FOCAL_LENGTH: f32 = 1.0;
@@ -17,7 +18,7 @@ use spirv_std::num_traits::Float;
 
 use shared::{Material, PackedNode, ShaderConstants, Voxel, TREE_DEPTH};
 use spirv_std::{
-    glam::{ivec3, uvec3, vec2, vec3, vec4, BVec3, IVec3, UVec3, Vec3, Vec3Swizzles, Vec4},
+    glam::{vec2, vec3, vec4, BVec3, Vec3, Vec3Swizzles, Vec4},
     spirv,
 };
 
@@ -31,11 +32,6 @@ struct HitResult {
 struct Ray {
     origin: Vec3,
     direction: Vec3,
-    t: f32,
-}
-
-fn sphere(point: Vec3) -> f32 {
-    (point - vec3(0.0, 0.0, -30.0)).length() - 15.0
 }
 
 fn less_than_equal(vec1: Vec3, vec2: Vec3) -> BVec3 {
@@ -47,11 +43,13 @@ fn less_than_equal(vec1: Vec3, vec2: Vec3) -> BVec3 {
 }
 
 struct GetResult {
+    is_branch: bool,
     exists: bool,
     material: Material,
 }
 
 const EMPTY_GET_RESULT: GetResult = GetResult {
+    is_branch: false,
     exists: false,
     material: EMPTY_MATERIAL,
 };
@@ -63,14 +61,15 @@ fn get(
     nodes: &[[PackedNode; 8]],
     voxels: &[Voxel],
     root: PackedNode,
+    depth: usize,
 ) -> GetResult {
-    if x < 0 || x >= 2_i32.pow(TREE_DEPTH) {
+    if x < 0 || x >= (1 << TREE_DEPTH) {
         return EMPTY_GET_RESULT;
     }
-    if y < 0 || y >= 2_i32.pow(TREE_DEPTH) {
+    if y < 0 || y >= (1 << TREE_DEPTH) {
         return EMPTY_GET_RESULT;
     }
-    if z < 0 || z >= 2_i32.pow(TREE_DEPTH) {
+    if z < 0 || z >= (1 << TREE_DEPTH) {
         return EMPTY_GET_RESULT;
     }
 
@@ -81,12 +80,13 @@ fn get(
     let mut node = root;
     let mut s = 2_u32.pow(TREE_DEPTH - 1);
 
-    loop {
+    for _ in 0..(depth + 1) {
         if node.is_empty() {
             return EMPTY_GET_RESULT;
         }
         if node.is_leaf() {
             return GetResult {
+                is_branch: false,
                 exists: true,
                 material: voxels[(node.0 & !(1 << 31)) as usize].material,
             };
@@ -104,34 +104,11 @@ fn get(
         s /= 2;
     }
 
-    // let mut node = PackedNode(0); // root node
-    //
-    // let mut s = 2_u32.pow(TREE_DEPTH);
-    //
-    // loop {
-    //     if node.is_empty() {
-    //         return EMPTY_GET_RESULT;
-    //     }
-    //
-    //     if node.is_leaf() {
-    //         return GetResult {
-    //             exists: true,
-    //             material: voxels[(node.0 - (1 << 31)) as usize].material,
-    //         };
-    //     }
-    //
-    //     let index = ((x >= s as i32) as usize) << 0
-    //         | ((y >= s as i32) as usize) << 1
-    //         | ((z >= s as i32) as usize) << 2;
-    //
-    //     node = nodes[node.0 as usize][index];
-    //
-    //     x %= s as i32;
-    //     y %= s as i32;
-    //     z %= s as i32;
-    //
-    //     s /= 2;
-    // }
+    GetResult {
+        is_branch: true,
+        exists: true,
+        material: EMPTY_MATERIAL,
+    }
 }
 
 impl Ray {
@@ -141,59 +118,84 @@ impl Ray {
         voxels: &[Voxel],
         root: PackedNode,
     ) -> HitResult {
+        let mut depth: usize = 1;
+        let mut section_size = (1 << (TREE_DEPTH - depth as u32)) as f32;
+
         let delta_dist = 1.0 / self.direction.abs();
         let ray_step = self.direction.signum().as_ivec3();
-        let mut map_pos = self.origin.floor().as_ivec3();
-        let mut side_dist = (self.direction.signum() * (map_pos.as_vec3() - self.origin)
+        // let mut map_pos = self.origin.floor().as_ivec3();
+
+        let mut grid_intersect = self.origin * self.direction;
+        let mut intersect = grid_intersect * section_size;
+
+        let mut off = Vec3::ZERO;
+        let mut block_pos = (intersect + off).floor().as_ivec3();
+
+        let mut section_pos = block_pos % section_size as i32;
+
+        let mut side_dist = (self.direction.signum() * (block_pos.as_vec3() - intersect)
             + (self.direction * 0.5)
             + 0.5)
             * delta_dist;
 
-        let mut mask = BVec3 {
-            x: false,
-            y: false,
-            z: false,
-        };
+        // representing u32::MAX packed nodes as None in this case
+        // let mut stack: [PackedNode; TREE_DEPTH as usize] =
+        //     [PackedNode(u32::MAX); TREE_DEPTH as usize];
+        // let mut stack_len: usize = 0;
 
-        let mut fmask = vec3(0.0, 0.0, 0.0);
-
-        for _ in 0..30 {
-            // self.t += sphere(self.origin);
-            self.origin += self.direction;
-
-            // if sphere(map_pos.as_vec3()) < 0.01 {
-            // let uposition = uvec3(map_pos.x as u32, map_pos.y as u32, map_pos.z as u32);
-            // let uposition = map_pos.as_uvec3();
+        for _ in 0..TRAVERSAL_STEPS {
             let get_result = get(
-                map_pos.x - 3,
-                map_pos.y + 3,
-                map_pos.z + 15,
+                section_pos.x - 3,
+                section_pos.y + 3,
+                section_pos.z + 25,
                 nodes,
                 voxels,
                 root,
+                depth,
             );
-            if get_result.exists {
-                let d = (fmask * (side_dist - delta_dist)).length() / 100.0;
 
-                return HitResult {
-                    exists: true,
-                    position: Vec3::ZERO,
-                    normal: Vec3::ZERO,
-                    material: get_result.material,
-                };
-            }
-
-            mask = less_than_equal(side_dist.xyz(), side_dist.yzx().min(side_dist.zxy()));
-            fmask = vec3(
+            let mask = less_than_equal(side_dist.xyz(), side_dist.yzx().min(side_dist.zxy()));
+            let fmask = vec3(
                 mask.x as i32 as f32,
                 mask.y as i32 as f32,
                 mask.z as i32 as f32,
             );
-            side_dist += fmask * delta_dist;
-            map_pos += fmask.as_ivec3() * ray_step;
-        }
 
-        // let d = (fmask * (side_dist - delta_dist)).length() / 100.0;
+            if get_result.exists {
+                if get_result.is_branch {
+                    depth += 1;
+                    section_size = (1 << (TREE_DEPTH - depth as u32)) as f32;
+
+                    // ray_step = section_size as i32 * self.origin.floor().as_ivec3();
+
+                    let d = fmask.length() * (side_dist - delta_dist);
+
+                    grid_intersect = self.origin + d * self.direction;
+                    intersect = grid_intersect * section_size;
+
+                    off = self.direction.signum() * fmask * 0.5;
+                    block_pos = (intersect + off).floor().as_ivec3();
+                    // let section_pos = block_pos % section_size as i32;
+
+                    side_dist = (self.direction.signum() * (block_pos.as_vec3() - intersect)
+                        + (self.direction * 0.5)
+                        + 0.5)
+                        * delta_dist;
+
+                    continue;
+                } else {
+                    return HitResult {
+                        exists: true,
+                        position: Vec3::ZERO,
+                        normal: Vec3::ZERO,
+                        material: get_result.material,
+                    };
+                }
+            }
+
+            side_dist += fmask * delta_dist;
+            section_pos += fmask.as_ivec3() * ray_step;
+        }
 
         HitResult {
             exists: false,
@@ -265,7 +267,6 @@ pub fn main_fs(
         let mut ray = Ray {
             origin: CAMERA_ORIGIN,
             direction: (pixel_center - CAMERA_ORIGIN).normalize(),
-            t: 0.0,
         };
 
         color += ray.color(nodes, voxels, constants.root_node);
